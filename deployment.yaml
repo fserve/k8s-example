@@ -1,0 +1,81 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mynamespace #this isnt really needed
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-svc
+  namespace: mynamespace
+spec:
+  type: ClusterIP #service need to use ClusterIP
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: http
+  selector:
+    app: nginx-pod
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx-ingress
+  namespace: mynamespace
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "session"
+    nginx.ingress.kubernetes.io/affinity-mode: persistent
+    #cert-manager.io/issue-temporary-certificate: "true" # temporary cert required for nginx to be able to reload
+    acme.cert-manager.io/http01-edit-in-place: "true" # important to merge with existing ingress resource into a single nginx config file
+    #ingress.kubernetes.io/ssl-redirect: "false" # avoid http > https redirect ( acme-challenge was still successful even with the redirect enabled )
+spec:
+  tls:
+  - hosts:
+      - mydomain.com
+    secretName: mydomain-cert
+  defaultBackend:
+    service:
+      name: nginx-svc
+      port:
+        number: 80
+  rules:
+  - host: mydomain.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: nginx-svc
+            port:
+              number: 80
+status:
+  loadBalancer:
+    ingress:
+    - ip: 10.0.0.13 #i dont know if it will be this ip for everyone.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+  namespace: mynamespace
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nginx-pod
+  template:
+    metadata:
+      labels:
+        app: nginx-pod
+    spec:
+      containers:
+      - name: nginx-container
+        image: nginx:1.14.2
+        ports:
+        - name: http
+          containerPort: 80
